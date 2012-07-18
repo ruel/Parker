@@ -71,6 +71,7 @@
     <Compile Include="frmPrompt.Designer.cs">
       <DependentUpon>frmPrompt.cs</DependentUpon>
     </Compile>
+    <Compile Include="GSms.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <EmbeddedResource Include="frmMain.resx">
@@ -100,7 +101,9 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="App.config" />
+    <None Include="App.config">
+      <SubType>Designer</SubType>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Content Include="protect.ico" />

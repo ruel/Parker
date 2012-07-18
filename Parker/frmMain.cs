@@ -11,18 +11,21 @@ using System.Text.RegularExpressions;
 using Parker.Properties;
 using System.Diagnostics;
 using TweetSharp;
+using GSms;
 
 namespace Parker
 {
     public partial class frmMain : Form
     {
         string fpath, sendTo, conKey, conSec;
-        int secs = 0;
+        int secs = 0, tlimit = 3;
+        bool tAuth = true, tGetMen = true;
 
         TwitterService tServ;
         FileSystemWatcher watcher;
         List<string> tmp;
-        Timer timer;
+        Timer timer, menTime;
+        SmsSender sender;
 
         public frmMain()
         {
@@ -31,7 +34,9 @@ namespace Parker
             watcher = new FileSystemWatcher();
             tmp = new List<string>();
             timer = new Timer();
-
+            menTime = new Timer();
+            sender = new SmsSender(Settings.Default.SmsAccounts[0].Split(':')[0], Settings.Default.SmsAccounts[0].Split(':')[1]);
+            
             nicMain.ShowBalloonTip(1000, "Parker", "I'm Up!", ToolTipIcon.Info);
 
             listenToolStripMenuItem.Checked = Settings.Default.Listen;
@@ -39,6 +44,7 @@ namespace Parker
             sendTo = Settings.Default.sendTo;
             conKey = Settings.Default.conKey;
             conSec = Settings.Default.conSec;
+            tGetMen = Settings.Default.tGetMen;
 
             if (!fpath.Equals(""))
                 watcher.Path = fpath + @"\";
@@ -52,7 +58,46 @@ namespace Parker
             timer.Interval = 1000;
             timer.Tick += new EventHandler(timer_Tick);
 
+            menTime.Enabled = false;
+            menTime.Interval = 60000;
+            menTime.Tick += new EventHandler(menTime_Tick);
+
             tAuthenticate();
+        }
+
+        private void menTime_Tick(object sender, EventArgs e)
+        {
+            try
+            {
+                getNewMentions();
+            }
+            catch (Exception ex)
+            {
+                nicMain.ShowBalloonTip(1000, "Parker", ex.Message, ToolTipIcon.Error);
+            }
+        }
+
+        private void sendSMS(string number, string message)
+        {
+            foreach (string acc in Settings.Default.SmsAccounts)
+            {
+                string uname = acc.Split(':')[0];
+                string upin = acc.Split(':')[1];
+
+                sender.uName = uname;
+                sender.uPin = upin;
+
+                string resp = sender.SendSms(number, message);
+
+                if (resp.Contains("302"))
+                {
+                    continue;
+                }
+                else
+                {
+                    break;
+                }
+            }
         }
 
         private void tAuthenticate()
@@ -81,7 +126,28 @@ namespace Parker
                 else
                 {
                     nicMain.ShowBalloonTip(2000, "Parker", "Twitter Authentication Error!", ToolTipIcon.Error);
+                    tAuth = false;
                 }
+            }
+
+            menTime.Enabled = tAuth;
+        }
+
+        private void getNewMentions()
+        {
+            if (tAuth && tGetMen)
+            {
+                List<TwitterStatus> mentions = new List<TwitterStatus>(tServ.ListTweetsMentioningMe());
+                List<TwitterStatus> limMen = new List<TwitterStatus>(mentions.Take(tlimit));
+                foreach (TwitterStatus mention in limMen) 
+                {
+                    if (!Settings.Default.readMentions.Contains(mention.Id.ToString()))
+                    {
+                        Settings.Default.readMentions.Add(mention.Id.ToString());
+                        sendSMS(Settings.Default.sendTo, "@" + mention.User.ScreenName + ": " + mention.Text);
+                    }
+                }
+                Settings.Default.Save();
             }
         }
 
@@ -199,12 +265,33 @@ namespace Parker
             switch (cmd.id)
             {
                 case "tweet":
-                    tServ.SendTweet(cmd.arg);
+                    if (tAuth)
+                        tServ.SendTweet(cmd.arg);
+                    break;
+                case "tmention":
+                    toggleMentionService(cmd.arg);
                     break;
                 case "google":
                     // Google processing here
                     break;
+                case "acro":
+                    break;
             }
+        }
+
+        private void toggleMentionService(string code)
+        {
+            switch (code)
+            {
+                case "1":
+                    Settings.Default.tGetMen = true;
+                    break;
+                case "0":
+                    Settings.Default.tGetMen = false;
+                    break;
+            }
+            Settings.Default.Save();
+            tGetMen = Settings.Default.tGetMen;
         }
 
         private Command parseString(string str)
